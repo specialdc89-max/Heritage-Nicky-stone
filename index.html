@@ -2536,10 +2536,10 @@ function renderCardView() {
 
         let transactionListener = null;
 
-                function listenForIncomingTransactions(userId) {
+                        function listenForIncomingTransactions(userId) {
             if (transactionListener) transactionListener();
 
-            // Listen to all transactions for this user without strict server-side sorting that requires indexes
+            // Listen to all transactions for this user where they are the recipient
             transactionListener = db.collection('transactions')
                 .where('recipientUid', '==', userId)
                 .onSnapshot(async (snapshot) => {
@@ -2547,36 +2547,30 @@ function renderCardView() {
                         // Only trigger when a brand new transaction document is added
                         if (change.type === 'added') {
                             const txData = change.doc.data();
-                            const txTime = txData.timestamp?.toMillis() || Date.now();
-                            const now = Date.now();
+                            const symbol = txData.symbol || '$';
+                            const sender = txData.senderName || 'A Heritage User';
                             
-                            // Check if transaction happened within the last 60 seconds
-                            if (now - txTime < 60000) {
-                                const symbol = txData.symbol || '$';
-                                const sender = txData.senderName || 'A Heritage User';
-                                
-                                try {
-                                    // 1. Fetch updated user balance from Firestore
-                                    const userDoc = await db.collection('users').doc(userId).get();
-                                    if (userDoc.exists) {
-                                        userAccountDetails = userDoc.data();
-                                    }
-                                    
-                                    // 2. Refresh local transaction list array
-                                    await fetchUserTransactions(userId, userAccountDetails.accountNumber);
-                                    
-                                    // 3. Redraw UI so balance & activity update live instantly
-                                    render();
-                                } catch (err) {
-                                    console.error("Live update error:", err);
+                            try {
+                                // 1. Fetch updated user balance from Firestore immediately
+                                const userDoc = await db.collection('users').doc(userId).get();
+                                if (userDoc.exists) {
+                                    userAccountDetails = userDoc.data();
                                 }
-
-                                // 4. Trigger the push notification banner & alert
-                                requestNotificationPermissionAndNotify(
-                                    "Heritage Bank: Money Received 💰",
-                                    `You received ${symbol}${Number(txData.amount).toLocaleString()} from ${sender}.`
-                                );
+                                
+                                // 2. Refresh local transaction list array
+                                await fetchUserTransactions(userId, userAccountDetails.accountNumber);
+                                
+                                // 3. Redraw UI so balance & activity update live instantly
+                                render();
+                            } catch (err) {
+                                console.error("Live update error:", err);
                             }
+
+                            // 4. Trigger the push notification banner & credit alert
+                            requestNotificationPermissionAndNotify(
+                                "Heritage Bank: Money Received 💰",
+                                `You received ${symbol}${Number(txData.amount).toLocaleString()} from ${sender}.`
+                            );
                         }
                     });
                 }, (error) => {
